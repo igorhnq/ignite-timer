@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
+import { createContext, useState } from "react";
 import { HandPalmIcon, PlayIcon } from "@phosphor-icons/react";
 
-import { useForm } from "react-hook-form";
+import { FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as zod from "zod";
-
-import { differenceInSeconds } from "date-fns";
 
 import { 
     HomeContainer, 
@@ -16,7 +14,6 @@ import {
 import { NewCycleForm } from "./components/NewCycleForm";
 import { Countdown } from "./components/Countdown";
 
-
 interface Cycle {   
     id: string;
     task: string;
@@ -26,11 +23,62 @@ interface Cycle {
     finishedDate?: Date;
 }
 
+interface NewCycleFormData {
+    task: string;
+    minutesAmount: number;
+}
+
+interface CyclesContextType {
+    activeCycle: Cycle | undefined;
+    activeCycleId: string | null;
+    amountSecondsPassed: number;
+    setSecondsPassed: (seconds: number) => void;
+    markCurrentCycleAsFinished: () => void;
+}
+
+export const CyclesContext = createContext({} as CyclesContextType)
+
 export function Home() {
     const [cycles, setCycles] = useState<Cycle[]>([]);
     const [activeCycleId, setActiveCycleId] = useState<string | null>(null);
 
+    const [amountSecondsPassed, setAmountSecondsPassed] = useState(0);
+    
     const activeCycle = cycles.find((cycle) => cycle.id === activeCycleId);
+
+    function setSecondsPassed(seconds: number) {
+        setAmountSecondsPassed(seconds);
+    }
+
+    const newCycleFormValidationSchema = zod.object({
+        task: zod.string().min(1, "Informe a tarefa"),
+        minutesAmount: zod
+            .number()
+            .min(5, "O ciclo precisa ser de no mínimo 5 minutos.")
+            .max(60, "O ciclo precisa ser de no máximo 60 minutos."),
+    });
+    
+    const newCycleForm = useForm<NewCycleFormData>({
+        resolver: zodResolver(newCycleFormValidationSchema),
+        defaultValues: {
+            task: "",
+            minutesAmount: 0,
+        },
+    });
+
+    const { handleSubmit, watch, reset } = newCycleForm;
+    
+    function markCurrentCycleAsFinished() {
+        setCycles((state) => state.map((cycle) => {
+            if (cycle.id === activeCycleId) {
+                return { ...cycle, finishedDate: new Date() };
+            }
+
+            return cycle;
+        }));
+
+        setActiveCycleId(null);
+    }
 
     function handleCreateNewCycle(data: NewCycleFormData) {
         const newCycle: Cycle = {
@@ -61,28 +109,18 @@ export function Home() {
         setActiveCycleId(null);
     }
 
-    const currentSeconds = activeCycle ? totalSeconds - amountSecondsPassed : 0;
-
-    const minutesAmount = Math.floor(currentSeconds / 60);
-    const secondsAmount = currentSeconds % 60;
-
-    const minutes = String(minutesAmount).padStart(2, "0");
-    const seconds = String(secondsAmount).padStart(2, "0");
-
-    useEffect(() => {
-        if (activeCycle) {
-            document.title = `${minutes}:${seconds}`;
-        }
-    }, [minutes, seconds, activeCycle]);
-
     const task = watch("task");
     const isSubmitDisabled = !task;
 
     return (
         <HomeContainer>
             <form onSubmit={handleSubmit(handleCreateNewCycle)}>
-                <NewCycleForm />
-                <Countdown activeCycle={activeCycle} />
+                <CyclesContext.Provider value={{ activeCycle, activeCycleId, markCurrentCycleAsFinished, amountSecondsPassed, setSecondsPassed }}>
+                    <FormProvider {...newCycleForm}>
+                        <NewCycleForm />
+                    </FormProvider>
+                    <Countdown />
+                </CyclesContext.Provider>
                 {activeCycle ? (
                     <StopCountdownButton type="button" onClick={handleInterruptCycle}>
                         <HandPalmIcon size={24} />
@@ -94,7 +132,6 @@ export function Home() {
                         Começar
                     </StartCountdownButton>
                 )}
-                    
             </form>
         </HomeContainer>
     )
